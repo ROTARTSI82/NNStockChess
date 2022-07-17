@@ -49,7 +49,9 @@ void Network::apply_backprop() {
     save();
 }
 
-void Trainer::train_metapos(const std::string &fen, const std::string &moves) {
+void Trainer::position_fen(const std::string &fen, const std::string &moves,
+                           const std::function<void()> &callback) {
+
     states = StateListPtr(new std::deque<StateInfo>(1)); // Drop the old state and create a new one
     pos.set(fen, Options["UCI_Chess960"], &states->back(), nullptr);
 
@@ -59,16 +61,14 @@ void Trainer::train_metapos(const std::string &fen, const std::string &moves) {
 
         auto is = std::istringstream(moves);
         while (is >> token && (m = UCI::to_move(pos, token)) != MOVE_NONE) {
-            train_line_here();
-            net->apply_backprop();
+            callback();
 
             states->emplace_back();
             pos.do_move(m, states->back());
         }
     }
 
-    train_line_here();
-    net->apply_backprop();
+    callback();
 }
 
 void Trainer::train_line_here() {
@@ -127,10 +127,27 @@ void Trainer::train_line_here() {
 void Trainer::train_this_position() {
     eval_forward();
 
+    StockfishEval ev = stockfish_eval();
+
+    Vec<2> expected = {{{ev.win}, {ev.loss}}};
+
+    net->hid1.backward(net->hid2.backward(net->hid3.backward(net->hid4.backward(net->out.backward(net->out.init_backwards(expected))))));
+    std::cout << "d = " << depth << ", s = " << net->num_samples << '\n';
+
+    net->num_samples++;
+    auto err = std::pow(ev.win - net->out.activation[0][0], 2) + std::pow(ev.loss - net->out.activation[1][0], 2);
+    net->err += err;
+
+    if (net->num_samples > 64)
+        net->apply_backprop();
+}
+
+StockfishEval Trainer::stockfish_eval() {
     Search::LimitsType limits;
 
     limits.startTime = now(); // The search starts as early as possible
-    limits.depth = 16;
+     limits.depth = 17;
+//    limits.nodes = 40000000;
 
     Threads.stop = true;
     Threads.main()->CUSTOM_done.store(false);
@@ -147,30 +164,13 @@ void Trainer::train_this_position() {
     }
 
     Threads.stop = true;
-//    Threads.main()->wait_for_search_finished();
-//    Threads.wait_for_search_finished();
 
     auto v = Threads.main()->CUSTOM_final_eval.load();
     auto ply = Threads.main()->CUSTOM_games_ply.load();
-//    std::cout << "Running with best: BEST = "  << v << '\n';
-
     double wdl_w = win_rate_model( v, ply);
     double wdl_l = win_rate_model(-v, ply);
 
-    Vec<2> expected = {{{wdl_w}, {wdl_l}}};
-
-    net->hid1.backward(net->hid2.backward(net->hid3.backward(net->hid4.backward(net->out.backward(net->out.init_backwards(expected))))));
-    std::cout << "d = " << depth << ", s = " << net->num_samples << '\n';
-
-    net->num_samples++;
-    auto err = std::pow(wdl_w - net->out.activation[0][0], 2) + std::pow(wdl_l - net->out.activation[1][0], 2);
-    net->err += err;
-
-    if (net->num_samples > 64)
-        net->apply_backprop();
-
-//    std::cout << err << '\n';
-//    std::cout << "wdl = " << wdl_w << " " << wdl_l << '\n';
+    return StockfishEval{wdl_w, wdl_l, v};
 }
 
 void Trainer::eval_forward() const {
@@ -214,7 +214,7 @@ Trainer::Trainer() {
 }
 
 Trainer::~Trainer() {
-    std::cout << pos << '\n'; // dump final position
+//    std::cout << pos << '\n'; // dump final position
 }
 
 void Trainer::position_fen(const std::string &fen) {

@@ -62,9 +62,14 @@ public:
     void apply_backprop();
 };
 
+struct StockfishEval {
+    NumericT win, loss;
+    Stockfish::Value eval;
+};
+
 class Trainer {
 public:
-    std::unique_ptr<Network> net = std::make_unique<Network>();
+    std::unique_ptr<Network> net; // = std::make_unique<Network>();
 
     Position pos{};
     StateListPtr states{new std::deque<StateInfo>(1)};
@@ -74,11 +79,13 @@ public:
     Trainer();
     ~Trainer();
 
-    void train_metapos(const std::string &fen, const std::string &moves);
+    void position_fen(const std::string &fen, const std::string &moves, const std::function<void()> &callback);
 
     void train_line_here();
 
     void train_this_position();
+
+    StockfishEval stockfish_eval();
 
     void eval_forward() const;
 
