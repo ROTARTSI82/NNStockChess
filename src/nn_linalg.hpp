@@ -207,8 +207,6 @@ public:
     inline constexpr void apply_backprop() {
         if (num_backprops <= 0) return;
 
-        std::cout << bias_step_acc.to_string() << '\n';
-
         biases += (bias_step_acc *= (bias_learn * learn_rate / num_backprops));
         weights += (weight_step_acc *= (learn_rate / num_backprops));
 

@@ -70,6 +70,7 @@ public:
     StateListPtr states{new std::deque<StateInfo>(1)};
 
     Trainer();
+    ~Trainer();
 
     void train_metapos(const std::string &fen, const std::string &moves);
 

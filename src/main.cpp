@@ -36,9 +36,13 @@ int main(int argc, char* argv[]) {
     Search::clear(); // After threads are up
     Eval::NNUE::init();
 
-    Trainer trainer{};
-
-    trainer.train_line_here();
+    {
+        Trainer trainer{};
+        trainer.net->load();
+        trainer.train_line_here();
+        trainer.net->apply_backprop();
+        trainer.net->save();
+    }
 
     UCI::loop(argc, argv);
 

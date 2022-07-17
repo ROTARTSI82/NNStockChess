@@ -43,6 +43,8 @@ void Network::apply_backprop() {
     hid3.apply_backprop();
     hid4.apply_backprop();
     out.apply_backprop();
+
+    save();
 }
 
 void Trainer::train_metapos(const std::string &fen, const std::string &moves) {
@@ -71,31 +73,38 @@ void Trainer::train_line_here() {
     StateInfo st;
     ASSERT_ALIGNED(&st, Eval::NNUE::CacheLineSize);
 
+    auto moveList = MoveList<LEGAL>(pos);
+    if (moveList.size() == 0) return; // no-op on all leaf positions
+
     train_this_position();
 
     NumericT bestEval = std::numeric_limits<NumericT>::min();
 
-    auto moveList = MoveList<LEGAL>(pos);
-    if (moveList.size() == 0) return;
-
     Move bestMove = *moveList.begin();
 
     for (const auto& mov : moveList) {
-        pos.do_move(mov, st);
-        train_this_position();
 
-        NumericT netEval = net->out.activation[0][0] - net->out.activation[1][0];
-        if (netEval > bestEval) {
-            bestEval = netEval;
-            bestMove = mov;
+        auto givesCheck = pos.gives_check(mov);
+        pos.do_move(mov, st, givesCheck);
+
+        if (MoveList<LEGAL>(pos).size() > 0) {
+            train_this_position();
+
+            NumericT netEval = net->out.activation[0][0] - net->out.activation[1][0];
+            if (netEval > bestEval) {
+                bestEval = netEval;
+                bestMove = mov;
+            }
         }
 
         pos.undo_move(mov);
     }
 
-    pos.do_move(bestMove, st);
-    train_line_here();
-    pos.undo_move(bestMove);
+    if (bestEval != std::numeric_limits<NumericT>::min()) {
+        pos.do_move(bestMove, st);
+        train_line_here();
+        pos.undo_move(bestMove);
+    }
 }
 
 void Trainer::train_this_position() {
@@ -106,9 +115,19 @@ void Trainer::train_this_position() {
     limits.startTime = now(); // The search starts as early as possible
     limits.depth = 16;
 
+    Threads.stop = true;
+    Threads.main()->CUSTOM_done.store(false);
+
     Threads.start_thinking(pos, states, limits, false);
-    Threads.wait_for_search_finished();
     Threads.main()->wait_for_search_finished();
+
+    Threads.stop = true;
+    Threads.wait_for_search_finished();
+
+    {
+        std::unique_lock<std::mutex> lg(Threads.main()->CUSTOM_mtx);
+        Threads.main()->CUSTOM_cv.wait(lg, []{ return Threads.main()->CUSTOM_done.load(); });
+    }
 
     auto v = Threads.main()->CUSTOM_final_eval.load();
     auto ply = Threads.main()->CUSTOM_games_ply.load();
@@ -170,6 +189,10 @@ void Trainer::eval_forward() const {
 Trainer::Trainer() {
     states = StateListPtr(new std::deque<StateInfo>(1));
     pos.set("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", false, &states->back(), Threads.main());
+}
+
+Trainer::~Trainer() {
+    std::cout << pos << '\n'; // dump final position
 }
 
 double win_rate_model(Value v, int ply) {
