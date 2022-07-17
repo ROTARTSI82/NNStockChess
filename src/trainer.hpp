@@ -69,6 +69,8 @@ public:
     Position pos{};
     StateListPtr states{new std::deque<StateInfo>(1)};
 
+    int depth = 0;
+
     Trainer();
     ~Trainer();
 
@@ -79,6 +81,8 @@ public:
     void train_this_position();
 
     void eval_forward() const;
+
+    void position_fen(const std::string &fen);
 };
 
 // The win rate model returns the probability of winning (in per mille units) given an

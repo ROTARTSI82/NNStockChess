@@ -26,8 +26,8 @@ message("-- Ofast build")
 set(STOCK_COMP_FLAGS -Wall -Wcast-qual -fno-exceptions -std=c++17  -pedantic -Wextra -Wshadow -m64 -DUSE_PTHREADS -DNDEBUG -Ofast -fexperimental-new-pass-manager -DIS_64BIT -msse -msse3 -mpopcnt -DUSE_POPCNT -DUSE_AVX2 -mavx2 -DUSE_SSE41 -msse4.1 -DUSE_SSSE3 -mssse3 -DUSE_SSE2 -msse2 -DUSE_PEXT -mbmi2 -flto)
 set(STOCK_LINK_FLAGS -latomic -m64 -lpthread  -Wall -Wcast-qual -fno-exceptions -std=c++17  -pedantic -Wextra -Wshadow -m64 -DUSE_PTHREADS -DNDEBUG -Ofast -fexperimental-new-pass-manager -DIS_64BIT -msse -msse3 -mpopcnt -DUSE_POPCNT -DUSE_AVX2 -mavx2 -DUSE_SSE41 -msse4.1 -DUSE_SSSE3 -mssse3 -DUSE_SSE2 -msse2 -DUSE_PEXT -mbmi2 -flto)
 
-#set(STOCK_COMP_FLAGS -Wall -Wcast-qual -std=c++17  -pedantic -Wextra -Wshadow -m64 -DUSE_PTHREADS -DNDEBUG -O3 -g3 -fexperimental-new-pass-manager -DIS_64BIT -msse -msse3 -mpopcnt -DUSE_POPCNT -DUSE_AVX2 -mavx2 -DUSE_SSE41 -msse4.1 -DUSE_SSSE3 -mssse3 -DUSE_SSE2 -msse2 -DUSE_PEXT -mbmi2) # -flto)
-#set(STOCK_LINK_FLAGS -latomic -m64 -lpthread  -Wall -Wcast-qual -std=c++17  -pedantic -Wextra -Wshadow -m64 -DUSE_PTHREADS -DNDEBUG -O3 -g3 -fexperimental-new-pass-manager -DIS_64BIT -msse -msse3 -mpopcnt -DUSE_POPCNT -DUSE_AVX2 -mavx2 -DUSE_SSE41 -msse4.1 -DUSE_SSSE3 -mssse3 -DUSE_SSE2 -msse2 -DUSE_PEXT -mbmi2) # -flto)
+#set(STOCK_COMP_FLAGS -Wall -Wcast-qual -std=c++17  -pedantic -Wextra -Wshadow -m64 -DUSE_PTHREADS -Og -g3 -fexperimental-new-pass-manager -DIS_64BIT -msse -msse3 -mpopcnt -DUSE_POPCNT -DUSE_AVX2 -mavx2 -DUSE_SSE41 -msse4.1 -DUSE_SSSE3 -mssse3 -DUSE_SSE2 -msse2 -DUSE_PEXT -mbmi2) # -flto)
+#set(STOCK_LINK_FLAGS -latomic -m64 -lpthread  -Wall -Wcast-qual -std=c++17  -pedantic -Wextra -Wshadow -m64 -DUSE_PTHREADS -Og -g3 -fexperimental-new-pass-manager -DIS_64BIT -msse -msse3 -mpopcnt -DUSE_POPCNT -DUSE_AVX2 -mavx2 -DUSE_SSE41 -msse4.1 -DUSE_SSSE3 -mssse3 -DUSE_SSE2 -msse2 -DUSE_PEXT -mbmi2) # -flto)
 
 target_compile_options(NNStockChess PUBLIC ${STOCK_COMP_FLAGS})
 target_link_options(NNStockChess PUBLIC ${STOCK_LINK_FLAGS})

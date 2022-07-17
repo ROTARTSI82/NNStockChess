@@ -39,14 +39,16 @@ int main(int argc, char* argv[]) {
     {
         Trainer trainer{};
         trainer.net->load();
-        trainer.train_line_here();
-        trainer.net->apply_backprop();
-        trainer.net->save();
+//        trainer.position_fen("rnbqkbnr/ppppp1pp/8/5p2/8/5P2/PPPPPKPP/RNBQ1BNR b kq - 1 2");
+
+        for (int i = 0; i < 4096; i++) {
+            trainer.train_line_here();
+            trainer.net->apply_backprop();
+            trainer.net->save();
+        }
     }
 
     UCI::loop(argc, argv);
-
-
 
     Threads.set(0);
     return 0;
