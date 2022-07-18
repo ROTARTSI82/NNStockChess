@@ -34,13 +34,59 @@ std::vector<Puzzle> load_puzzles_csv(const std::string &file) {
     return ret;
 }
 
-HashedPosition::HashedPosition(Position &pos) : white(pos.castling_rights(WHITE)), black(pos.castling_rights(BLACK)) {
-    constexpr auto EP_SQ_VALUE = 244;
-    for (int i = 0; i < 64; i++) {
-        Square sq = static_cast<Square>(SQ_A1 + i);
-        board[i] = pos.piece_on(sq);
-        if (sq == pos.ep_square() && pos.ep_square() != SQ_NONE) {
-            board[i] = EP_SQ_VALUE;
+
+Dataset::Dataset() : dataset(load_puzzles_csv("/home/shared/chess/lichess_db_puzzle.csv")),
+                     dist(0, dataset.size() - 1) {}
+
+void Dataset::load_from_bin(const std::string &file) {
+    std::ifstream fd(file, std::ios::in | std::ios::binary);
+    while (!fd.eof()) {
+        StockfishEval ev{};
+        char c;
+
+        fd >> c;
+        if (c != 'N') {
+            std::cerr << "corrupt N\n";
+            continue;
         }
+
+        std::string fen;
+
+        c = (char) fd.get();
+        do {
+            fen += c;
+            c = (char) fd.get();
+        } while (c != ',');
+
+        fd.read((char *) &ev, sizeof(StockfishEval));
+
+        gen[fen] = ev;
+
+        accum += ev.eval;
+        avg_divisor++;
+        med.emplace_back(ev.eval);
     }
+
+    fd.close();
+}
+
+void Dataset::print() {
+    std::sort(med.begin(), med.end());
+
+    std::cout << "No. Puzzles = " << dataset.size() << '\n';
+    std::cout << "Loaded " << gen.size() << " positions from previous runs\n";
+    std::cout << "Average eval: " << accum / avg_divisor << '\n';
+
+    if (!med.empty())
+        std::cout << "Median eval: " << med.at(med.size() / 2) << '\n';
+}
+
+void Dataset::mm_print() {
+    std::cout << "Histogram[{";
+    for (auto v: med)
+        std::cout << v << ", ";
+    std::cout << "}, 200, Ticks -> {Table[-5000 + 200 i, {i, 0, 100}], Automatic}]" << std::endl;
+
+//    for (auto &v : gen)
+//        std::cout << v.first << '\n';
 }
