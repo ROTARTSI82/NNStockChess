@@ -21,6 +21,8 @@ struct Dataset {
     std::int64_t accum = 0;
     std::int64_t avg_divisor = 1;
 
+    double accum_w = 0, accum_l = 0;
+
     std::vector<Puzzle> dataset;
     std::uniform_int_distribution<std::size_t> dist;
 

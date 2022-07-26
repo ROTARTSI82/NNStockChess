@@ -56,16 +56,21 @@ public:
         out.randomize();
     }
 
-    void save(const std::string &file = "net.nn");
-    void load(const std::string &file = "net.nn");
+    void save(const std::string &file = "net2.nn");
+    void load(const std::string &file = "net2.nn");
 
     void apply_backprop();
 };
 
 struct StockfishEval {
-    NumericT win, loss;
+    double win, loss;
     Stockfish::Value eval;
 };
+
+inline std::string clean_fen(Position &p) {
+    std::string cleanFen = p.fen();
+    return cleanFen.substr(0, cleanFen.rfind(' ', cleanFen.rfind(' ') - 1));
+}
 
 class Trainer {
 public:
@@ -83,7 +88,7 @@ public:
 
     void train_line_here();
 
-    void train_this_position();
+    void train_this_position(const std::unordered_map<std::string, StockfishEval> *dataset = nullptr);
 
     StockfishEval stockfish_eval();
 

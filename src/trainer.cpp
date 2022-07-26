@@ -16,6 +16,7 @@ static inline constexpr NumericT bb_bool_to_numeric(Bitboard bb) {
 }
 
 void Network::save(const std::string &file) {
+    std::cout << "SAVE\t";
     std::ofstream fd{file, std::ios::out | std::ios::binary};
     hid1.save(fd);
     hid2.save(fd);
@@ -26,6 +27,7 @@ void Network::save(const std::string &file) {
 }
 
 void Network::load(const std::string &file) {
+    std::cout << "LOAD\t";
     std::ifstream fd{file, std::ios::in | std::ios::binary};
     hid1.load(fd);
     hid2.load(fd);
@@ -124,29 +126,41 @@ void Trainer::train_line_here() {
     depth--;
 }
 
-void Trainer::train_this_position() {
+void Trainer::train_this_position(const std::unordered_map<std::string, StockfishEval> *dataset) {
     eval_forward();
 
-    StockfishEval ev = stockfish_eval();
+    std::string fen = clean_fen(pos);
+    StockfishEval ev{};
+    if (dataset != nullptr && dataset->count(fen) > 0)
+        ev = dataset->at(fen);
+    else {
+        std::cout << "Cache miss\n";
+        ev = stockfish_eval();
+    }
 
-    Vec<2> expected = {{{ev.win}, {ev.loss}}};
+    Vec<2> expected = Vec<2>{{{(NumericT)ev.win}, {NumericT(ev.loss)}}};
 
     net->hid1.backward(net->hid2.backward(net->hid3.backward(net->hid4.backward(net->out.backward(net->out.init_backwards(expected))))));
-    std::cout << "d = " << depth << ", s = " << net->num_samples << '\n';
+
+    auto outW = net->out.activation[0][0];
+    auto outL = net->out.activation[1][0];
+
+    std::cout << "d = " << depth << ", s = " << net->num_samples << "; outp = " << outW << ' ' << outL
+              << ", real = " << ev.win << ' ' << ev.loss << '\n';
 
     net->num_samples++;
-    auto err = std::pow(ev.win - net->out.activation[0][0], 2) + std::pow(ev.loss - net->out.activation[1][0], 2);
+    auto err = std::pow(ev.win - outW, 2) + std::pow(ev.loss - outL, 2);
     net->err += err;
 
-    if (net->num_samples > 64)
-        net->apply_backprop();
+//    if (net->num_samples > 64)
+//        net->apply_backprop();
 }
 
 StockfishEval Trainer::stockfish_eval() {
     Search::LimitsType limits;
 
     limits.startTime = now(); // The search starts as early as possible
-     limits.depth = 17;
+     limits.depth = 16;
 //    limits.nodes = 40000000;
 
     Threads.stop = true;
@@ -167,8 +181,8 @@ StockfishEval Trainer::stockfish_eval() {
 
     auto v = Threads.main()->CUSTOM_final_eval.load();
     auto ply = Threads.main()->CUSTOM_games_ply.load();
-    double wdl_w = win_rate_model( v, ply);
-    double wdl_l = win_rate_model(-v, ply);
+    auto wdl_w = win_rate_model( v, ply);
+    auto wdl_l = win_rate_model(-v, ply);
 
     return StockfishEval{wdl_w, wdl_l, v};
 }

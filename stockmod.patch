@@ -1,0 +1,329 @@
+diff --git a/src/bitboard.h b/src/bitboard.h
+index 2b6e2a69..afe5ff18 100644
+--- a/src/bitboard.h
++++ b/src/bitboard.h
+@@ -133,7 +133,7 @@ constexpr bool more_than_one(Bitboard b) {
+ 
+ 
+ constexpr bool opposite_colors(Square s1, Square s2) {
+-  return (s1 + rank_of(s1) + s2 + rank_of(s2)) & 1;
++  return (static_cast<int>(s1) + rank_of(s1) + s2 + rank_of(s2)) & 1;
+ }
+ 
+ 
+diff --git a/src/evaluate.cpp b/src/evaluate.cpp
+index d340d3d5..06675bf9 100644
+--- a/src/evaluate.cpp
++++ b/src/evaluate.cpp
+@@ -142,10 +142,13 @@ namespace Eval {
+         exit(EXIT_FAILURE);
+     }
+ 
++#ifndef DISABLE_PV_OUTP
+     if (useNNUE)
+         sync_cout << "info string NNUE evaluation using " << eval_file << " enabled" << sync_endl;
+     else
+         sync_cout << "info string classical evaluation enabled" << sync_endl;
++#endif
++
+   }
+ }
+ 
+@@ -159,7 +162,7 @@ namespace Trace {
+ 
+   Score scores[TERM_NB][COLOR_NB];
+ 
+-  double to_cp(Value v) { return double(v) / PawnValueEg; }
++  double to_cp(Value v) { return double(v) / static_cast<int>(PawnValueEg); }
+ 
+   void add(int idx, Color c, Score s) {
+     scores[idx][c] = s;
+diff --git a/src/nnue/evaluate_nnue.cpp b/src/nnue/evaluate_nnue.cpp
+index ba2ed367..10119aa6 100644
+--- a/src/nnue/evaluate_nnue.cpp
++++ b/src/nnue/evaluate_nnue.cpp
+@@ -251,7 +251,7 @@ namespace Stockfish::Eval::NNUE {
+ 
+     buffer[0] = (v < 0 ? '-' : v > 0 ? '+' : ' ');
+ 
+-    double cp = 1.0 * std::abs(int(v)) / PawnValueEg;
++    double cp = 1.0 * std::abs(int(v)) / static_cast<int>(PawnValueEg);
+     sprintf(&buffer[1], "%6.2f", cp);
+   }
+ 
+diff --git a/src/position.cpp b/src/position.cpp
+index ec9229ea..8296da01 100644
+--- a/src/position.cpp
++++ b/src/position.cpp
+@@ -685,7 +685,8 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
+   assert(is_ok(m));
+   assert(&newSt != st);
+ 
+-  thisThread->nodes.fetch_add(1, std::memory_order_relaxed);
++  if (thisThread)
++    thisThread->nodes.fetch_add(1, std::memory_order_relaxed);
+   Key k = st->key ^ Zobrist::side;
+ 
+   // Copy some fields of the old state to our new StateInfo object except the
+@@ -771,7 +772,9 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
+       // Update material hash key and prefetch access to materialTable
+       k ^= Zobrist::psq[captured][capsq];
+       st->materialKey ^= Zobrist::psq[captured][pieceCount[captured]];
+-      prefetch(thisThread->materialTable[st->materialKey]);
++
++      if (thisThread)
++        prefetch(thisThread->materialTable[st->materialKey]);
+ 
+       // Reset rule 50 counter
+       st->rule50 = 0;
+diff --git a/src/position.h b/src/position.h
+index 510875d8..e2d8134a 100644
+--- a/src/position.h
++++ b/src/position.h
+@@ -175,7 +175,7 @@ public:
+   void put_piece(Piece pc, Square s);
+   void remove_piece(Square s);
+ 
+-private:
++public:
+   // Initialization helpers (used while setting up a position)
+   void set_castling_right(Color c, Square rfrom);
+   void set_state(StateInfo* si) const;
+diff --git a/src/search.cpp b/src/search.cpp
+index c5c7f111..6b0213d8 100644
+--- a/src/search.cpp
++++ b/src/search.cpp
+@@ -22,6 +22,7 @@
+ #include <cstring>   // For std::memset
+ #include <iostream>
+ #include <sstream>
++#include <chrono>
+ 
+ #include "evaluate.h"
+ #include "misc.h"
+@@ -182,8 +183,13 @@ void MainThread::search() {
+ 
+   if (Limits.perft)
+   {
++      auto start = std::chrono::high_resolution_clock::now();
+       nodes = perft<true>(rootPos, Limits.perft);
+-      sync_cout << "\nNodes searched: " << nodes << "\n" << sync_endl;
++
++      auto diff = std::chrono::high_resolution_clock::now() - start;
++      auto nps = 1000000.0 * nodes / std::chrono::duration_cast<std::chrono::microseconds>(diff).count();
++
++      sync_cout << "\nNodes searched: " << nodes << " (" << nps / 1000000.0 << " mnps)\n" << sync_endl;
+       return;
+   }
+ 
+@@ -242,16 +248,25 @@ void MainThread::search() {
+   for (Thread* th : Threads)
+     th->previousDepth = bestThread->completedDepth;
+ 
++
+   // Send again PV info if we have a new best thread
+   if (bestThread != this)
+-      sync_cout << UCI::pv(bestThread->rootPos, bestThread->completedDepth, -VALUE_INFINITE, VALUE_INFINITE) << sync_endl;
++      /* sync_cout << */ UCI::pv(bestThread->rootPos, bestThread->completedDepth, -VALUE_INFINITE, VALUE_INFINITE) /* << sync_endl */;
++    CUSTOM_final_eval = CUSTOM_get_best(bestThread);
++    CUSTOM_games_ply = bestThread->rootPos.game_ply();
+ 
+-  sync_cout << "bestmove " << UCI::move(bestThread->rootMoves[0].pv[0], rootPos.is_chess960());
++  /* sync_cout << "bestmove " << */ UCI::move(bestThread->rootMoves[0].pv[0], rootPos.is_chess960());
+ 
+   if (bestThread->rootMoves[0].pv.size() > 1 || bestThread->rootMoves[0].extract_ponder_from_tt(rootPos))
+-      std::cout << " ponder " << UCI::move(bestThread->rootMoves[0].pv[1], rootPos.is_chess960());
++      /* std::cout << " ponder " << */ UCI::move(bestThread->rootMoves[0].pv[1], rootPos.is_chess960());
+ 
+-  std::cout << sync_endl;
++//  std::cout << sync_endl;
++
++    {
++        std::unique_lock<std::mutex> lg(CUSTOM_mtx);
++        CUSTOM_done = true;
++    }
++  CUSTOM_cv.notify_all();
+ }
+ 
+ 
+@@ -392,6 +407,7 @@ void Thread::search() {
+               if (Threads.stop)
+                   break;
+ 
++#ifndef DISABLE_PV_OUTP
+               // When failing high/low give some update (without cluttering
+               // the UI) before a re-search.
+               if (   mainThread
+@@ -399,6 +415,7 @@ void Thread::search() {
+                   && (bestValue <= alpha || bestValue >= beta)
+                   && Time.elapsed() > 3000)
+                   sync_cout << UCI::pv(rootPos, rootDepth, alpha, beta) << sync_endl;
++#endif
+ 
+               // In case of failing low/high increase aspiration window and
+               // re-search, otherwise exit the loop.
+@@ -427,9 +444,11 @@ void Thread::search() {
+           // Sort the PV lines searched so far and update the GUI
+           std::stable_sort(rootMoves.begin() + pvFirst, rootMoves.begin() + pvIdx + 1);
+ 
++#ifndef DISABLE_PV_OUTP
+           if (    mainThread
+               && (Threads.stop || pvIdx + 1 == multiPV || Time.elapsed() > 3000))
+               sync_cout << UCI::pv(rootPos, rootDepth, alpha, beta) << sync_endl;
++#endif
+       }
+ 
+       if (!Threads.stop)
+@@ -977,10 +996,13 @@ moves_loop: // When in check, search starts here
+ 
+       ss->moveCount = ++moveCount;
+ 
++#ifndef DISABLE_PV_OUTP
+       if (rootNode && thisThread == Threads.main() && Time.elapsed() > 3000)
+           sync_cout << "info depth " << depth
+                     << " currmove " << UCI::move(move, pos.is_chess960())
+                     << " currmovenumber " << moveCount + thisThread->pvIdx << sync_endl;
++#endif
++
+       if (PvNode)
+           (ss+1)->pv = nullptr;
+ 
+@@ -1888,6 +1910,35 @@ string UCI::pv(const Position& pos, Depth depth, Value alpha, Value beta) {
+ }
+ 
+ 
++    Value CUSTOM_get_best(const Thread *best) {
++        const Position& pos = best->rootPos;
++        const Depth depth = best->completedDepth;
++
++        const RootMoves& rootMoves = pos.this_thread()->rootMoves;
++        size_t multiPV = std::min((size_t)Options["MultiPV"], rootMoves.size());
++
++        for (size_t i = 0; i < multiPV; ++i)
++        {
++            bool updated = rootMoves[i].score != -VALUE_INFINITE;
++
++            if (depth == 1 && !updated && i > 0)
++                continue;
++
++            Value v = updated ? rootMoves[i].score : rootMoves[i].previousScore;
++
++            if (v == -VALUE_INFINITE)
++                v = VALUE_ZERO;
++
++            bool tb = TB::RootInTB && abs(v) < VALUE_MATE_IN_MAX_PLY;
++            v = tb ? rootMoves[i].tbScore : v;
++
++            return v;
++        }
++
++        __builtin_unreachable();
++    }
++
++
+ /// RootMove::extract_ponder_from_tt() is called in case we have no ponder move
+ /// before exiting the search, for instance, in case we stop the search during a
+ /// fail high at root. We try hard to have a ponder move to return to the GUI,
+diff --git a/src/thread.h b/src/thread.h
+index 9e9cd488..a8171303 100644
+--- a/src/thread.h
++++ b/src/thread.h
+@@ -40,7 +40,7 @@ namespace Stockfish {
+ /// to care about someone changing the entry under our feet.
+ 
+ class Thread {
+-
++protected:
+   std::mutex mutex;
+   std::condition_variable cv;
+   size_t idx;
+@@ -94,7 +94,12 @@ struct MainThread : public Thread {
+   Value iterValue[4];
+   int callsCnt;
+   bool stopOnPonderhit;
+-  std::atomic_bool ponder;
++  std::atomic_bool ponder, CUSTOM_done;
++
++  std::mutex CUSTOM_mtx;
++  std::condition_variable CUSTOM_cv;
++  std::atomic<int> CUSTOM_games_ply;
++  std::atomic<Value> CUSTOM_final_eval;
+ };
+ 
+ 
+diff --git a/src/uci.cpp b/src/uci.cpp
+index c0bacfaf..78fef8d5 100644
+--- a/src/uci.cpp
++++ b/src/uci.cpp
+@@ -213,7 +213,7 @@ namespace {
+      double b = (((bs[0] * m + bs[1]) * m + bs[2]) * m) + bs[3];
+ 
+      // Transform the eval to centipawns with limited range
+-     double x = std::clamp(double(100 * v) / PawnValueEg, -2000.0, 2000.0);
++     double x = std::clamp(double(100 * v) / static_cast<int>(PawnValueEg), -2000.0, 2000.0);
+ 
+      // Return the win rate in per mille units rounded to the nearest value
+      return int(0.5 + 1000 / (1 + std::exp((a - x) / b)));
+diff --git a/src/uci.h b/src/uci.h
+index 76a893f9..ebe2f2d7 100644
+--- a/src/uci.h
++++ b/src/uci.h
+@@ -23,6 +23,7 @@
+ #include <string>
+ 
+ #include "types.h"
++#include "thread.h"
+ 
+ namespace Stockfish {
+ 
+@@ -78,6 +79,14 @@ Move to_move(const Position& pos, std::string& str);
+ 
+ } // namespace UCI
+ 
++/**
++ * Custom function to return the eval of the position from
++ * the best thread
++ * @param best Best thread
++ * @return Raw eval
++ */
++Value CUSTOM_get_best(const Thread *best);
++
+ extern UCI::OptionsMap Options;
+ 
+ } // namespace Stockfish
+diff --git a/src/ucioption.cpp b/src/ucioption.cpp
+index 922fa34f..323ebbd6 100644
+--- a/src/ucioption.cpp
++++ b/src/ucioption.cpp
+@@ -61,24 +61,24 @@ void init(OptionsMap& o) {
+   constexpr int MaxHashMB = Is64Bit ? 33554432 : 2048;
+ 
+   o["Debug Log File"]        << Option("", on_logger);
+-  o["Threads"]               << Option(1, 1, 512, on_threads);
+-  o["Hash"]                  << Option(16, 1, MaxHashMB, on_hash_size);
++  o["Threads"]               << Option(8, 1, 512, on_threads);
++  o["Hash"]                  << Option(8000, 1, MaxHashMB, on_hash_size);
+   o["Clear Hash"]            << Option(on_clear_hash);
+   o["Ponder"]                << Option(false);
+   o["MultiPV"]               << Option(1, 1, 500);
+   o["Skill Level"]           << Option(20, 0, 20);
+   o["Move Overhead"]         << Option(10, 0, 5000);
+-  o["Slow Mover"]            << Option(100, 10, 1000);
++  o["Slow Mover"]            << Option(10, 10, 1000);
+   o["nodestime"]             << Option(0, 0, 10000);
+   o["UCI_Chess960"]          << Option(false);
+   o["UCI_AnalyseMode"]       << Option(false);
+   o["UCI_LimitStrength"]     << Option(false);
+-  o["UCI_Elo"]               << Option(1350, 1350, 2850);
+-  o["UCI_ShowWDL"]           << Option(false);
+-  o["SyzygyPath"]            << Option("<empty>", on_tb_path);
++  o["UCI_Elo"]               << Option(2850, 1350, 2850);
++  o["UCI_ShowWDL"]           << Option(true);
++  o["SyzygyPath"]            << Option("/home/shared/chess/tablebases/syzygy6", on_tb_path);
+   o["SyzygyProbeDepth"]      << Option(1, 1, 100);
+   o["Syzygy50MoveRule"]      << Option(true);
+-  o["SyzygyProbeLimit"]      << Option(7, 0, 7);
++  o["SyzygyProbeLimit"]      << Option(5, 0, 7);
+   o["Use NNUE"]              << Option(true, on_use_NNUE);
+   o["EvalFile"]              << Option(EvalFileDefaultName, on_eval_file);
+ }

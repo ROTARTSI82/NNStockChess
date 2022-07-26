@@ -23,17 +23,12 @@ std::random_device dev{};
 std::mt19937_64 mt64(dev());
 
 
-inline std::string clean_fen(Position &p) {
-    std::string cleanFen = p.fen();
-    return cleanFen.substr(0, cleanFen.rfind(' ', cleanFen.rfind(' ') - 1));
-}
-
 
 void generate_training_data() {
     Dataset set;
     set.load_from_bin("traindata.bin");
     set.print();
-    set.mm_print();
+//    set.mm_print();
 
     Trainer trainer{};
 
@@ -55,22 +50,32 @@ void generate_training_data() {
             failChance *= std::min(std::abs(ev.eval) / 1600.0, 1.0); // prefer high negative values
 
         std::uniform_real_distribution<double> chanceIgn(0, 100);
+
+        NumericT avgW = set.accum_w / set.avg_divisor;
+        NumericT avgL = set.accum_l / set.avg_divisor;
+
+//        NumericT dw = avgW - 0.5;
+//        NumericT dl = avgL - 0.5;
+
         if (chanceIgn(mt64) > failChance && std::signbit<int>(ev.eval) == std::signbit(set.accum)) return;
 
-        double rejectionChance = ev.eval > 0 ? 5 : 10; // chance of rejecting a perfectly good candidate
-        if (ev.eval > 0)
-            rejectionChance *= std::clamp(std::abs(ev.eval) / 1600.0, 0.0, 1.0); // prefer low positive values
-        else
-            rejectionChance *= std::clamp(1 - std::abs(ev.eval) / 3200.0, 0.0, 1.0); // prefer high negative values
-        if (chanceIgn(mt64) < rejectionChance) return;
+//        double rejectionChance = ev.eval > 0 ? 5 : 10; // chance of rejecting a perfectly good candidate
+//        if (ev.eval > 0)
+//            rejectionChance *= std::clamp(std::abs(ev.eval) / 1600.0, 0.0, 1.0); // prefer low positive values
+//        else
+//            rejectionChance *= std::clamp(1 - std::abs(ev.eval) / 3200.0, 0.0, 1.0); // prefer high negative values
+//        if (chanceIgn(mt64) < rejectionChance) return;
 
         set.gen[cleanFen] = ev;
 
         set.accum += ev.eval;
+        set.accum_w += ev.win;
+        set.accum_l += ev.loss;
         set.avg_divisor++;
 
         std::cout << counter++ << "\t" << cleanFen << '\t' << ev.eval << "\twlr " << ev.win << ' '
-                  << ev.loss << '\t' << sec << "sec" << "\t avg " << set.accum / set.avg_divisor << std::endl;
+                  << ev.loss << '\t' << sec << "sec" << "\t avg " << set.accum / set.avg_divisor
+                  << "\tavgwdl " << avgW << " " << avgL << std::endl;
     };
 
 
@@ -78,7 +83,7 @@ void generate_training_data() {
         const Puzzle *p;
         do {
             p = &set.dataset.at(set.dist(mt64));
-        } while (!(p->Themes.contains("opening")));
+        } while (!(p->Themes.contains("equality")));
 
         trainer.position_fen(p->FEN, p->Moves, [&]() {
             eval();
@@ -91,7 +96,7 @@ void generate_training_data() {
 //                }
         });
 
-        if (counter > 72) {
+        if (counter > 256) {
             std::ofstream fd("traindata.bin", std::ios::out | std::ios::binary);
             for (const auto &v: set.gen) {
                 fd << 'N' << v.first << ',';
@@ -109,25 +114,41 @@ void generate_training_data() {
 void train_network() {
     Trainer trainer{};
     trainer.net = std::make_unique<Network>();
+    trainer.net->load();
 
     Dataset set;
-    set.load_from_bin("puzzles.bin");
+    set.load_from_bin("traindata.bin");
+   
 
     set.print();
 
-    while (true) {
-        auto randPos = set.gen.begin();
-        std::advance(randPos, set.dist(mt64));
+    int num = 0; // 10240
+    while (set.gen.size() > 4) {
+        auto it = set.gen.begin();
 
-        trainer.states = StateListPtr(new std::deque<StateInfo>(1));
-//        trainer.pos.unhash_from(randPos->first, false, &trainer.states->back(), nullptr);
+        auto dist = std::uniform_int_distribution<std::size_t>(0, set.gen.size() - 1);
+        std::advance(it, dist(mt64));
 
-        StateInfo *si = &trainer.states->back();
+        trainer.position_fen(it->first);
+        trainer.train_this_position(&set.gen);
+
+        if (num++ % 512 == 511) {
+            trainer.net->apply_backprop();
+            trainer.net->save();
+            std::cout << " ================================ [ NETWORK SAVED! num = " << num
+                      << ", left = " << set.gen.size() << " ] ================================\n";
+        }
+
+        set.gen.erase(it);
     }
+
+    trainer.net->apply_backprop();
+    trainer.net->save();
 }
 
 int main(int argc, char* argv[]) {
 //    feenableexcept(FE_INVALID | FE_OVERFLOW);
+// feenableexcept(FE_INVALID);
 
     std::cout << "Hello, World!" << std::endl;
     std::cout << engine_info() << std::endl;
@@ -144,7 +165,8 @@ int main(int argc, char* argv[]) {
     Search::clear(); // After threads are up
     Eval::NNUE::init();
 
-    generate_training_data();
+//    generate_training_data();
+    train_network();
 
 //    UCI::loop(argc, argv);
 

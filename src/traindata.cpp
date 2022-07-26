@@ -63,6 +63,8 @@ void Dataset::load_from_bin(const std::string &file) {
         gen[fen] = ev;
 
         accum += ev.eval;
+        accum_w += ev.win;
+        accum_l += ev.loss;
         avg_divisor++;
         med.emplace_back(ev.eval);
     }
@@ -83,8 +85,8 @@ void Dataset::print() {
 
 void Dataset::mm_print() {
     std::cout << "Histogram[{";
-    for (auto v: med)
-        std::cout << v << ", ";
+    for (auto &v: gen)
+        std::cout << std::round(v.second.win * 1000) / 1000.0 << ", ";
     std::cout << "}, 200, Ticks -> {Table[-5000 + 200 i, {i, 0, 100}], Automatic}]" << std::endl;
 
 //    for (auto &v : gen)

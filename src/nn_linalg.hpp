@@ -9,11 +9,11 @@
 template <typename T>
 struct SigmoidActivation {
     static inline constexpr T activate(T in) {
-        return 1 / (1 + std::exp(-in));
+        return 1 / (1 + std::exp((double) -in));
     }
 
     static inline constexpr T activate_prime(T in) {
-        return std::exp(-in) / std::pow(1 + std::exp(-in), 2);
+        return std::exp((double) -in) / std::pow(1 + std::exp((double) -in), 2);
     }
 };
 
@@ -67,6 +67,8 @@ public:
     constexpr static int cols = C;
 
     T dat[R][C];
+
+    // constexpr inline Matrix() = default;
 
     constexpr inline T *operator[](std::size_t r) {
         return dat[r];
@@ -132,7 +134,7 @@ public:
     }
 
     constexpr inline Matrix<T, C, R> transpose() const {
-        Matrix<T, C, R> x{};
+        Matrix<T, C, R> x;
         for (int r = 0; r < rows; r++)
             for (int c = 0; c < cols; c++)
                 x[c][r] = dat[r][c];
@@ -151,7 +153,7 @@ public:
     }
 
     constexpr static inline self zeroed() {
-        self ret{};
+        self ret;
         for (auto r = 0; r < rows; r++)
             for (auto c = 0; c < cols; c++)
                 ret.dat[r][c] = 0;
@@ -180,7 +182,7 @@ public:
     }
 };
 
-using NumericT = double;
+using NumericT = float;
 
 template <int R, int C>
 using Mat = Matrix<NumericT, R, C>;
@@ -198,7 +200,7 @@ public:
     Mat<OutNo, InpNo> weight_step_acc = Mat<OutNo, InpNo>::zeroed();
     Vec<OutNo> bias_step_acc = Vec<OutNo>::zeroed();
     NumericT num_backprops = 0;
-    NumericT learn_rate = 1, bias_learn = 1;
+    NumericT learn_rate = 0.1, bias_learn = 1;
 
     Vec<OutNo> z_act;
     Vec<OutNo> activation;
@@ -225,21 +227,21 @@ public:
 
         for (int i = 0; i < OutNo; i++) {
             // derivative of activation with respect to Z
-            NumericT dAct_dZ = Activation::activate_prime(z_act[i][0]);
+            const NumericT dAct_dZ = Activation::activate_prime(z_act[i][0]);
 
             // derivative of cost with respect to bias;
-            NumericT dCost_dZ = dCost_dAct[i][0] * dAct_dZ;
+            const NumericT dCost_dZ = dCost_dAct[i][0] * dAct_dZ;
 
             // no term for derivative of Z with respect to bias since dZ_dBias = 1
-            NumericT dCost_dBias = dCost_dZ;
+            const NumericT dCost_dBias = dCost_dZ;
             bias_step_acc[i][0] += dCost_dBias;
 
             for (int j = 0; j < InpNo; j++) {
-                double dZ_dWeight = input->dat[j][0]; // equal to the activation of the previous layer!
-                double dCost_dWeight = dCost_dZ * dZ_dWeight;
+                const NumericT dZ_dWeight = input->dat[j][0]; // equal to the activation of the previous layer!
+                const NumericT dCost_dWeight = dCost_dZ * dZ_dWeight;
                 weight_step_acc[i][j] += dCost_dWeight;
 
-                double dZ_dActPrev = weights[i][j]; // equal to the weight connecting that neuron to us
+                const NumericT dZ_dActPrev = weights[i][j]; // equal to the weight connecting that neuron to us
                 dCost_dActPrev[j][0] += dCost_dZ * dZ_dActPrev;
             }
         }
